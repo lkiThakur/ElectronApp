@@ -26,16 +26,17 @@ let shuffle = false /* Is Shuffle Enabled */
 let loop = 0 /* Loop Type (0 - No loop, 1 - Loop Queue, 2 - Loop Track)*/
 let is_playing = false
 
-function pauseTrack() {
+function pauseTrack(send = true) {
     if (is_playing) {
         // Ease-in and out feature to be added here
         curr_track.pause();
-        ipc.send('song-pause')
+        if (send)
+            ipc.send('song-pause')
     }
     is_playing = false;
 }
 
-function resumeTrack() {
+function resumeTrack(send = true) {
     if (!is_playing && curr_index == -1) {
         playSong(0)
     }
@@ -43,7 +44,18 @@ function resumeTrack() {
         curr_track.play();
     }
     is_playing = true;
-    ipc.send('song-resume')
+    if (send)
+        ipc.send('song-resume')
+}
+
+function stopTrack() {
+    if (is_playing) {
+        pauseTrack(false)
+        curr_track.src = ''
+        curr_track.load();
+        curr_track.play()
+        is_playing = false
+    }
 }
 
 // Core Function - All Songs are queued and played over here
@@ -58,13 +70,7 @@ function playSong(index) {
     });
 
     // Reset Current Progress
-    if (is_playing) {
-        pauseTrack()
-        curr_track.src = ''
-        curr_track.load();
-        curr_track.play()
-        is_playing = false
-    }
+    stopTrack()
 
     let mpaths = mlib.get('mpaths')
 
@@ -77,22 +83,23 @@ function playSong(index) {
     curr_index = index
     let audpath = mpaths[curr_index]
 
-    // ID3 tags Extraction
-    id3tags(audpath)
-
     createSongObject(audpath)
         .then(data => {
             curr_track.src = data
             curr_track.load()
             curr_track.play()
             is_playing = true
+            // ID3 tags Extraction
+            id3tags(audpath)
+
+            ipc.send('song-resume')
+
         })
         .catch(err => {
-            console.log(err)
+            ipc.send('INACCESSIBLE')
         })
 
-    is_playing = true
-    ipc.send('song-resume')
+
 }
 
 async function id3tags(audpath) {
@@ -200,12 +207,18 @@ ipc.on('resume', resumeTrack)
 
 ipc.on('pause', pauseTrack)
 
+ipc.on('stop', stopTrack)
+
 ipc.on('next-song', nextSong)
 
 ipc.on('prev-song', prevSong)
 
 ipc.on('track', function (event, arg) {
     playSong(arg)
+})
+
+ipc.on('seek-pos', function (event, arg) {
+    curr_track.currentTime = parseInt(arg)
 })
 
 // ipc.on('sync-main', syncMain)
